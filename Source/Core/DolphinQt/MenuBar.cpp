@@ -757,6 +757,20 @@ void MenuBar::AddMovieMenu()
 
   movie_menu->addSeparator();
 
+  auto* enable_rng_fuzzing = movie_menu->addAction(tr("[SFA] Enable RNG Fuzzing"));
+  enable_rng_fuzzing->setCheckable(true);
+  enable_rng_fuzzing->setChecked(SConfig::GetInstance().m_SFA_RNGFuzzing);
+  connect(enable_rng_fuzzing, &QAction::toggled,
+          [](bool value) { SConfig::GetInstance().m_SFA_RNGFuzzing = value; });
+
+  auto* brute_force_grid_pw = movie_menu->addAction(tr("[SFA] Brute Force Grid Password"));
+  brute_force_grid_pw->setCheckable(true);
+  brute_force_grid_pw->setChecked(SConfig::GetInstance().m_SFA_BruteForceGridPW);
+  connect(brute_force_grid_pw, &QAction::toggled,
+          [](bool value) { SConfig::GetInstance().m_SFA_BruteForceGridPW = value; });
+
+  movie_menu->addSeparator();
+
   auto* pause_at_end = movie_menu->addAction(tr("Pause at End of Movie"));
   pause_at_end->setCheckable(true);
   pause_at_end->setChecked(SConfig::GetInstance().m_PauseMovie);

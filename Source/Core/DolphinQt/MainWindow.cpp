@@ -586,6 +586,11 @@ void MainWindow::ConnectHotkeys()
     emit ReadOnlyModeChanged(read_only);
   });
 
+  Movie::SetBruteForceCallback([this]()
+  {
+    RequestStopNoConfirm();
+  });
+
   connect(m_hotkey_scheduler, &HotkeyScheduler::Step, m_code_widget, &CodeWidget::Step);
   connect(m_hotkey_scheduler, &HotkeyScheduler::StepOver, m_code_widget, &CodeWidget::StepOver);
   connect(m_hotkey_scheduler, &HotkeyScheduler::StepOut, m_code_widget, &CodeWidget::StepOut);
@@ -802,6 +807,37 @@ void MainWindow::OnStopComplete()
     StartGame(std::move(m_pending_boot));
     m_pending_boot.reset();
   }
+  
+  if (SConfig::GetInstance().m_SFA_BruteForceGridPW)
+  {
+    std::string dtm_file = Movie::GetMoviePath();
+    
+    if (dtm_file.empty())
+      return;
+
+    if (!Movie::IsReadOnly())
+    {
+      // let's make the read-only flag consistent at the start of a movie.
+      Movie::SetReadOnly(true);
+      emit ReadOnlyModeChanged(true);
+    }
+
+    std::optional<std::string> savestate_path;
+    if (Movie::PlayInput(dtm_file, &savestate_path))
+    {
+      emit RecordingStatusChanged(true);
+
+      Play(savestate_path);
+    }
+  }
+}
+
+void MainWindow::RequestStopNoConfirm()
+{
+  bool bConfirmTemp = SConfig::GetInstance().bConfirmStop;
+  SConfig::GetInstance().bConfirmStop = false;
+  RequestStop();
+  SConfig::GetInstance().bConfirmStop = bConfirmTemp;
 }
 
 bool MainWindow::RequestStop()
@@ -847,6 +883,8 @@ bool MainWindow::RequestStop()
 
       return false;
     }
+
+    SConfig::GetInstance().m_SFA_BruteForceGridPW = false;
   }
 
   OnStopRecording();

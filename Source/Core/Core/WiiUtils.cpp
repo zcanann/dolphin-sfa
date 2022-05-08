@@ -108,6 +108,7 @@ static bool ImportWAD(IOS::HLE::Kernel& ios, const DiscIO::VolumeWAD& wad,
   // during the process of downloading a game, and some games (eg. Mega Man 9) refuse to load DLC if
   // they are not present. So ensure they exist and create them if they don't.
   const bool shop_logs_exist = [&] {
+    /*
     const std::array<u8, 32> dummy_data{};
     for (const std::string& path : {"/shared2/ec/shopsetu.log", "/shared2/succession/shop.log"})
     {
@@ -126,7 +127,7 @@ static bool ImportWAD(IOS::HLE::Kernel& ios, const DiscIO::VolumeWAD& wad,
                                                     {rw_mode, rw_mode, rw_mode});
       if (!new_handle || !new_handle->Write(dummy_data.data(), dummy_data.size()))
         return false;
-    }
+    }*/
     return true;
   }();
 

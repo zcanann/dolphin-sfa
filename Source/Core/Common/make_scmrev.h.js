@@ -74,8 +74,8 @@ function GetFileContents(f)
 // get info from git
 var gitexe = GetGitExe();
 var revision	= GetFirstStdOutLine(gitexe + cmd_revision);
-var describe	= GetFirstStdOutLine(gitexe + cmd_describe);
-var branch		= GetFirstStdOutLine(gitexe + cmd_branch);
+var describe	= "" // GetFirstStdOutLine(gitexe + cmd_describe);
+var branch		= "master" // GetFirstStdOutLine(gitexe + cmd_branch);
 var isStable = +("master" == branch || "stable" == branch);
 
 // Get environment information.

@@ -257,6 +257,8 @@ void SConfig::SaveMovieSettings(IniFile& ini)
   IniFile::Section* movie = ini.GetOrCreateSection("Movie");
 
   movie->Set("PauseMovie", m_PauseMovie);
+  movie->Set("SFA_RNGManip", m_SFA_RNGFuzzing);
+  movie->Set("SFA_BruteForce", m_SFA_BruteForceGridPW);
   movie->Set("Author", m_strMovieAuthor);
   movie->Set("DumpFrames", m_DumpFrames);
   movie->Set("DumpFramesSilent", m_DumpFramesSilent);
@@ -523,8 +525,10 @@ void SConfig::LoadCoreSettings(IniFile& ini)
 void SConfig::LoadMovieSettings(IniFile& ini)
 {
   IniFile::Section* movie = ini.GetOrCreateSection("Movie");
-
+  
   movie->Get("PauseMovie", &m_PauseMovie, false);
+  movie->Get("SFA_RNGManip", &m_SFA_RNGFuzzing, false);
+  movie->Get("SFA_BruteForce", &m_SFA_BruteForceGridPW, false);
   movie->Get("Author", &m_strMovieAuthor, "");
   movie->Get("DumpFrames", &m_DumpFrames, false);
   movie->Get("DumpFramesSilent", &m_DumpFramesSilent, false);

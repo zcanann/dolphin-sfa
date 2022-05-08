@@ -28,7 +28,9 @@
 #include "Common/FileUtil.h"
 #include "Common/Hash.h"
 #include "Common/IOFile.h"
+#include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
+#include "Common/Random.h"
 #include "Common/NandPaths.h"
 #include "Common/StringUtil.h"
 #include "Common/Timer.h"
@@ -61,6 +63,7 @@
 #include "Core/IOS/USB/Bluetooth/BTEmu.h"
 #include "Core/IOS/USB/Bluetooth/WiimoteDevice.h"
 #include "Core/NetPlayProto.h"
+#include "Core/PowerPC/MMU.h"
 #include "Core/State.h"
 
 #include "DiscIO/Enums.h"
@@ -93,6 +96,7 @@ static u64 s_totalLagCount = 0;                               // just stats
 static u64 s_currentInputCount = 0, s_totalInputCount = 0;    // just stats
 static u64 s_totalTickCount = 0, s_tickCountAtLastInput = 0;  // just stats
 static u64 s_recordingStartTime;  // seconds since 1970 that recording started
+static std::function<void()> s_bruteForceCallback = nullptr;
 static bool s_bSaveConfig = false, s_bNetPlay = false;
 static bool s_bClearSave = false;
 static bool s_bDiscChange = false;
@@ -104,6 +108,11 @@ static u8 s_bongos, s_memcards;
 static std::array<u8, 20> s_revision;
 static u32 s_DSPiromHash = 0;
 static u32 s_DSPcoefHash = 0;
+
+static std::string s_cached_movie_path;
+static std::optional<std::string> s_cached_save_state_path;
+
+Common::Random::PRNG rng{0};
 
 static bool s_bRecordingFromSaveState = false;
 static bool s_bPolled = false;
@@ -920,6 +929,12 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
     Movie::LoadInput(movie_path);
   }
 
+  s_cached_movie_path = movie_path;
+  if (savestate_path && savestate_path)
+  {
+    s_cached_save_state_path = *savestate_path;
+  }
+
   return true;
 }
 
@@ -1112,6 +1127,21 @@ static void CheckInputEnd()
   }
 }
 
+void SetBruteForceCallback(std::function<void()> bruteForceCallback)
+{
+  s_bruteForceCallback = bruteForceCallback;
+}
+
+const std::string GetMoviePath()
+{
+  return s_cached_movie_path;
+}
+
+const std::optional<std::string> GetSaveStatePath()
+{
+  return s_cached_save_state_path;
+}
+
 // NOTE: CPU Thread
 void PlayController(GCPadStatus* PadStatus, int controllerID)
 {
@@ -1280,6 +1310,36 @@ void EndPlayInput(bool cont)
       Core::UpdateWantDeterminism();
       if (was_running && !SConfig::GetInstance().m_PauseMovie)
         CPU::EnableStepping(false);
+      
+      if (SConfig::GetInstance().m_SFA_BruteForceGridPW)
+      {
+        u32 baseAddress = 0x8032A489; // 0x80329849 (v1.0) 0x8032A489 (v1.1)
+        u8 pw1 = PowerPC::HostRead_U8(baseAddress);
+        u8 pw2 = PowerPC::HostRead_U8(baseAddress + 2);
+        u8 pw3 = PowerPC::HostRead_U8(baseAddress + 4);
+        u8 pw4 = PowerPC::HostRead_U8(baseAddress + 6);
+        u8 pw5 = PowerPC::HostRead_U8(baseAddress + 8);
+        u8 pw6 = PowerPC::HostRead_U8(baseAddress + 10);
+        
+        NOTICE_LOG_FMT(COMMON, "Brute force attempt complete:");
+        NOTICE_LOG_FMT(COMMON, "{} {} {} {} {} {}", pw1, pw2, pw3, pw4, pw5, pw6);
+
+        // Save the recording if it has a good pattern
+        if (pw1 <= 2 && pw2 <= 2 && pw3 <= 2 && pw4 <= 2 && pw5 <= 2 && pw6 <= 2)
+        {
+          std::string pattern = std::to_string(pw1) + std::to_string(pw2) + std::to_string(pw3) + std::to_string(pw4) + std::to_string(pw5) + std::to_string(pw6);
+          std::string randName = std::to_string(rng.GenerateValue<u32>());
+          bool bTemp = s_bRecordingFromSaveState;
+          s_bRecordingFromSaveState = true;
+          SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
+          s_bRecordingFromSaveState = bTemp;
+        }
+
+        if (s_bruteForceCallback)
+        {
+          s_bruteForceCallback();
+        }
+      }
     });
   }
 }
@@ -1354,6 +1414,49 @@ void SetWiiInputManip(WiiManipFunction func)
 // NOTE: CPU Thread
 void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
 {
+  if ((IsRecordingInput() || IsPlayingInput()) && SConfig::GetInstance().m_SFA_RNGFuzzing)
+  {
+    if (s_currentByte == 1)
+    {
+      NOTICE_LOG_FMT(COMMON, "RNG Fuzzing inputs...");
+    }
+
+    // Load DTM memory into pad state
+    memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
+
+    if (rng.GenerateValue<u8>() <= 127)
+    {
+      PadStatus->button |= PAD_BUTTON_UP;
+      s_padState.DPadUp = true;
+    }
+
+    if (rng.GenerateValue<u8>() <= 127)
+    {
+      PadStatus->button |= PAD_BUTTON_DOWN;
+      s_padState.DPadUp = true;
+    }
+
+    if (rng.GenerateValue<u8>() <= 127)
+    {
+      PadStatus->button |= PAD_BUTTON_LEFT;
+      s_padState.DPadLeft = true;
+    }
+
+    if (rng.GenerateValue<u8>() <= 127)
+    {
+      PadStatus->button |= PAD_BUTTON_RIGHT;
+      s_padState.DPadRight = true;
+    }
+
+    PadStatus->substickX = rng.GenerateValue<u8>();
+    PadStatus->substickY = rng.GenerateValue<u8>();
+    s_padState.CStickX = PadStatus->substickX;
+    s_padState.CStickY = PadStatus->substickY;
+
+    // Overwrite DTM memory
+    memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
+  }
+
   if (s_gc_manip_func)
     s_gc_manip_func(PadStatus, controllerID);
 }

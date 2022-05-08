@@ -279,6 +279,8 @@ struct SConfig
   bool m_showTagsColumn;
 
   std::string m_WirelessMac;
+  bool m_SFA_RNGFuzzing;
+  bool m_SFA_BruteForceGridPW;
   bool m_PauseMovie;
   bool m_ShowLag;
   bool m_ShowFrameCount;

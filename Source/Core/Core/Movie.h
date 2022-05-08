@@ -179,6 +179,9 @@ void PlayController(GCPadStatus* PadStatus, int controllerID);
 bool PlayWiimote(int wiimote, WiimoteCommon::DataReportBuilder& rpt, int ext,
                  const WiimoteEmu::EncryptionKey& key);
 void EndPlayInput(bool cont);
+void SetBruteForceCallback(std::function<void()> bruteForceCallback);
+const std::string GetMoviePath();
+const std::optional<std::string> GetSaveStatePath();
 void SaveRecording(const std::string& filename);
 void DoState(PointerWrap& p);
 void Shutdown();

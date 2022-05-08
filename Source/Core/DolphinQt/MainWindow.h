@@ -86,6 +86,7 @@ private:
   void TogglePause();
 
   // May ask for confirmation. Returns whether or not it actually stopped.
+  void RequestStopNoConfirm();
   bool RequestStop();
   void ForceStop();
   void Reset();
