@@ -1313,7 +1313,7 @@ void EndPlayInput(bool cont)
       
       if (SConfig::GetInstance().m_SFA_BruteForceGridPW)
       {
-        u32 baseAddress = 0x8032A489; // 0x80329849 (v1.0) 0x8032A489 (v1.1)
+        u32 baseAddress = 0x80329849; // 0x80329849 (v1.0) 0x8032A489 (v1.1)
         u8 pw1 = PowerPC::HostRead_U8(baseAddress);
         u8 pw2 = PowerPC::HostRead_U8(baseAddress + 2);
         u8 pw3 = PowerPC::HostRead_U8(baseAddress + 4);
