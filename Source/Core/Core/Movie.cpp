@@ -1433,7 +1433,7 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
     // Load DTM memory into pad state
     memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
 
-    Common::Random::PRNG rng{static_cast<u64>(time(NULL))};
+    Common::Random::PRNG rng{static_cast<u64>((u64)clock() ^ getpid())};
 
     PadStatus->button |= PAD_BUTTON_UP;
     PadStatus->button ^= PAD_BUTTON_UP;
