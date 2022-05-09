@@ -89,6 +89,7 @@ static u8 s_controllers = 0;
 static ControllerState s_padState;
 static DTMHeader tmpHeader;
 static std::vector<u8> s_temp_input;
+static std::vector<u8> s_temp_input_orig;
 static u64 s_currentByte = 0;
 static u64 s_currentFrame = 0, s_totalFrames = 0;  // VI
 static u64 s_currentLagCount = 0;
@@ -919,6 +920,8 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
   s_currentByte = 0;
   recording_file.Close();
 
+  s_temp_input_orig = s_temp_input;
+
   // Load savestate (and skip to frame data)
   if (tmpHeader.bFromSaveState && savestate_path)
   {
@@ -1009,6 +1012,7 @@ void LoadInput(const std::string& movie_path)
 
     s_temp_input.resize(static_cast<size_t>(totalSavedBytes));
     t_record.ReadBytes(s_temp_input.data(), s_temp_input.size());
+    s_temp_input_orig = s_temp_input;
   }
   else if (s_currentByte > 0)
   {
@@ -1337,6 +1341,7 @@ void EndPlayInput(bool cont)
           s_bRecordingFromSaveState = true;
           SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
           s_bRecordingFromSaveState = bTemp;
+          s_temp_input = s_temp_input_orig;
         }
 
         if (s_bruteForceCallback)
@@ -1420,31 +1425,35 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
 {
   if ((IsRecordingInput() || IsPlayingInput()) && SConfig::GetInstance().m_SFA_RNGFuzzing)
   {
-    if (s_currentByte == 1)
-    {
-      NOTICE_LOG_FMT(COMMON, "RNG Fuzzing inputs...");
-    }
-
     // Load DTM memory into pad state
     memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
 
-    if (rng.GenerateValue<u8>() <= 127)
+    PadStatus->button &= ~PAD_BUTTON_UP;
+    s_padState.DPadUp = false;
+    PadStatus->button &= ~PAD_BUTTON_DOWN;
+    s_padState.DPadDown = false;
+    PadStatus->button &= ~PAD_BUTTON_LEFT;
+    s_padState.DPadLeft = false;
+    PadStatus->button &= ~PAD_BUTTON_RIGHT;
+    s_padState.DPadRight = false;
+
+    if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
     {
       PadStatus->button |= PAD_BUTTON_UP;
       s_padState.DPadUp = true;
     }
-    else if (rng.GenerateValue<u8>() <= 127)
+    else if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
     {
       PadStatus->button |= PAD_BUTTON_DOWN;
       s_padState.DPadDown = true;
     }
 
-    if (rng.GenerateValue<u8>() <= 127)
+    if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
     {
       PadStatus->button |= PAD_BUTTON_LEFT;
       s_padState.DPadLeft = true;
     }
-    else if (rng.GenerateValue<u8>() <= 127)
+    else if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
     {
       PadStatus->button |= PAD_BUTTON_RIGHT;
       s_padState.DPadRight = true;
