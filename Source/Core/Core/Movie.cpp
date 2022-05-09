@@ -955,11 +955,15 @@ void DoState(PointerWrap& p)
 void LoadInput(const std::string& movie_path)
 {
   File::IOFile t_record;
-  if (!t_record.Open(movie_path, "r+b"))
+  while (!t_record.Open(movie_path, "r+b"))
   {
+    // Stall
+
+    /*
     PanicAlertFmtT("Failed to read {0}", movie_path);
     EndPlayInput(false);
     return;
+    */
   }
 
   t_record.ReadArray(&tmpHeader, 1);
@@ -1429,11 +1433,10 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
       PadStatus->button |= PAD_BUTTON_UP;
       s_padState.DPadUp = true;
     }
-
-    if (rng.GenerateValue<u8>() <= 127)
+    else if (rng.GenerateValue<u8>() <= 127)
     {
       PadStatus->button |= PAD_BUTTON_DOWN;
-      s_padState.DPadUp = true;
+      s_padState.DPadDown = true;
     }
 
     if (rng.GenerateValue<u8>() <= 127)
@@ -1441,8 +1444,7 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
       PadStatus->button |= PAD_BUTTON_LEFT;
       s_padState.DPadLeft = true;
     }
-
-    if (rng.GenerateValue<u8>() <= 127)
+    else if (rng.GenerateValue<u8>() <= 127)
     {
       PadStatus->button |= PAD_BUTTON_RIGHT;
       s_padState.DPadRight = true;
