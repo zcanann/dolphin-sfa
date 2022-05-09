@@ -113,8 +113,6 @@ static u32 s_DSPcoefHash = 0;
 static std::string s_cached_movie_path;
 static std::optional<std::string> s_cached_save_state_path;
 
-Common::Random::PRNG rng{0};
-
 static bool s_bRecordingFromSaveState = false;
 static bool s_bPolled = false;
 
@@ -1336,6 +1334,7 @@ void EndPlayInput(bool cont)
         if (pw1 <= 2 && pw2 <= 2 && pw3 <= 2 && pw4 <= 2 && pw5 <= 2 && pw6 <= 2)
         {
           std::string pattern = std::to_string(pw1) + std::to_string(pw2) + std::to_string(pw3) + std::to_string(pw4) + std::to_string(pw5) + std::to_string(pw6);
+          Common::Random::PRNG rng{(u64)clock()};
           std::string randName = std::to_string(rng.GenerateValue<u32>());
           bool bTemp = s_bRecordingFromSaveState;
           s_bRecordingFromSaveState = true;
@@ -1427,6 +1426,8 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
   {
     // Load DTM memory into pad state
     memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
+
+    Common::Random::PRNG rng{(u64)clock()};
 
     PadStatus->button &= ~PAD_BUTTON_UP;
     s_padState.DPadUp = false;
