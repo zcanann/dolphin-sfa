@@ -586,9 +586,9 @@ void MainWindow::ConnectHotkeys()
     emit ReadOnlyModeChanged(read_only);
   });
 
-  Movie::SetBruteForceCallback([this]()
-  {
-    RequestStopNoConfirm();
+  Movie::SetBruteForceCallback([this]() {
+    StateLoadSlotAt(1);
+    // RequestStopNoConfirm();
   });
 
   connect(m_hotkey_scheduler, &HotkeyScheduler::Step, m_code_widget, &CodeWidget::Step);
