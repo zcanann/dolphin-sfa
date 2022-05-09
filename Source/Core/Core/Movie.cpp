@@ -1437,23 +1437,23 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
     PadStatus->button &= ~PAD_BUTTON_RIGHT;
     s_padState.DPadRight = false;
 
-    if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
+    if (rng.GenerateValue<u8>() < 127)
     {
       PadStatus->button |= PAD_BUTTON_UP;
       s_padState.DPadUp = true;
     }
-    else if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
+    else if (rng.GenerateValue<u8>() < 127)
     {
       PadStatus->button |= PAD_BUTTON_DOWN;
       s_padState.DPadDown = true;
     }
 
-    if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
+    if (rng.GenerateValue<u8>() < 127)
     {
       PadStatus->button |= PAD_BUTTON_LEFT;
       s_padState.DPadLeft = true;
     }
-    else if (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) <= 0.5f)
+    else if (rng.GenerateValue<u8>() < 127)
     {
       PadStatus->button |= PAD_BUTTON_RIGHT;
       s_padState.DPadRight = true;
