@@ -102,6 +102,7 @@ static bool s_bSaveConfig = false, s_bNetPlay = false;
 static bool s_bClearSave = false;
 static bool s_bDiscChange = false;
 static bool s_bReset = false;
+static u64 s_haitus = 0;
 static std::string s_author;
 static std::string s_discChange;
 static std::array<u8, 16> s_MD5;
@@ -262,6 +263,7 @@ void Init(const BootParameters& boot)
     s_rerecords = 0;
     s_currentByte = 0;
     s_currentFrame = 0;
+    s_haitus = 0;
     s_currentLagCount = 0;
     s_currentInputCount = 0;
   }
@@ -553,6 +555,7 @@ bool BeginRecordingInput(int controllers)
     s_temp_input.clear();
 
     s_currentByte = 0;
+    s_haitus = 0;
 
     if (Core::IsRunning())
       Core::UpdateWantDeterminism();
@@ -903,6 +906,7 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
   s_totalInputCount = tmpHeader.inputCount;
   s_totalTickCount = tmpHeader.tickCount;
   s_currentFrame = 0;
+  s_haitus = 0;
   s_currentLagCount = 0;
   s_currentInputCount = 0;
 
@@ -916,6 +920,7 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
   s_temp_input.resize(recording_file.GetSize() - 256);
   recording_file.ReadBytes(s_temp_input.data(), s_temp_input.size());
   s_currentByte = 0;
+  s_haitus = 0;
   recording_file.Close();
 
   s_temp_input_orig = s_temp_input;
@@ -1303,6 +1308,7 @@ void EndPlayInput(bool cont)
       CPU::Break();
     s_rerecords = 0;
     s_currentByte = 0;
+    s_haitus = 0;
     s_playMode = MODE_NONE;
     Core::DisplayMessage("Movie End.", 2000);
     s_bRecordingFromSaveState = false;
@@ -1427,43 +1433,89 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
     // Load DTM memory into pad state
     memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
 
-    Common::Random::PRNG rng{(u64)clock()};
+    Common::Random::PRNG rng{static_cast<u64>(time(NULL))};
 
-    PadStatus->button &= ~PAD_BUTTON_UP;
+    PadStatus->button |= PAD_BUTTON_UP;
+    PadStatus->button ^= PAD_BUTTON_UP;
     s_padState.DPadUp = false;
-    PadStatus->button &= ~PAD_BUTTON_DOWN;
+    PadStatus->button |= PAD_BUTTON_DOWN;
+    PadStatus->button ^= PAD_BUTTON_DOWN;
     s_padState.DPadDown = false;
-    PadStatus->button &= ~PAD_BUTTON_LEFT;
+    PadStatus->button |= PAD_BUTTON_LEFT;
+    PadStatus->button ^= PAD_BUTTON_LEFT;
     s_padState.DPadLeft = false;
-    PadStatus->button &= ~PAD_BUTTON_RIGHT;
+    PadStatus->button |= PAD_BUTTON_RIGHT;
+    PadStatus->button ^= PAD_BUTTON_RIGHT;
     s_padState.DPadRight = false;
 
-    if (rng.GenerateValue<u8>() < 127)
-    {
-      PadStatus->button |= PAD_BUTTON_UP;
-      s_padState.DPadUp = true;
-    }
-    else if (rng.GenerateValue<u8>() < 127)
-    {
-      PadStatus->button |= PAD_BUTTON_DOWN;
-      s_padState.DPadDown = true;
-    }
+    PadStatus->button |= PAD_BUTTON_Y;
+    PadStatus->button ^= PAD_BUTTON_Y;
+    s_padState.Y = false;
+    PadStatus->button |= PAD_BUTTON_B;
+    PadStatus->button ^= PAD_BUTTON_B;
+    s_padState.B = false;
+    PadStatus->button |= PAD_BUTTON_A;
+    PadStatus->button ^= PAD_BUTTON_A;
+    s_padState.A = false;
 
-    if (rng.GenerateValue<u8>() < 127)
-    {
-      PadStatus->button |= PAD_BUTTON_LEFT;
-      s_padState.DPadLeft = true;
-    }
-    else if (rng.GenerateValue<u8>() < 127)
-    {
-      PadStatus->button |= PAD_BUTTON_RIGHT;
-      s_padState.DPadRight = true;
-    }
+    PadStatus->substickX = 0;
+    PadStatus->substickY = 0;
+    s_padState.CStickX = 0;
+    s_padState.CStickY = 0;
 
-    PadStatus->substickX = rng.GenerateValue<u8>();
-    PadStatus->substickY = rng.GenerateValue<u8>();
-    s_padState.CStickX = PadStatus->substickX;
-    s_padState.CStickY = PadStatus->substickY;
+    // if (s_currentFrame > s_haitus + 25)
+    {
+      // Small chance of generating 25 frames of nothing
+      if (rng.GenerateValue<u8>() < 8)
+      {
+        // s_haitus = s_currentFrame;
+      }
+
+      if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_Y;
+        s_padState.Y = true;
+      }
+
+      if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_B;
+        s_padState.B = true;
+      }
+
+      if (rng.GenerateValue<u8>() < 10)
+      {
+        PadStatus->button |= PAD_BUTTON_A;
+        s_padState.A = true;
+      }
+
+      if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_UP;
+        s_padState.DPadUp = true;
+      }
+      else if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_DOWN;
+        s_padState.DPadDown = true;
+      }
+
+      if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_LEFT;
+        s_padState.DPadLeft = true;
+      }
+      else if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_RIGHT;
+        s_padState.DPadRight = true;
+      }
+
+      PadStatus->substickX = rng.GenerateValue<u8>();
+      PadStatus->substickY = rng.GenerateValue<u8>();
+      s_padState.CStickX = PadStatus->substickX;
+      s_padState.CStickY = PadStatus->substickY;
+    }
 
     // Overwrite DTM memory
     memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
