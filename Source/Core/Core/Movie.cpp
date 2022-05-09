@@ -1463,12 +1463,12 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
     s_padState.CStickX = 0;
     s_padState.CStickY = 0;
 
-    // if (s_currentFrame > s_haitus + 25)
+    if (s_currentFrame > s_haitus + 25)
     {
-      // Small chance of generating 25 frames of nothing
-      if (rng.GenerateValue<u8>() < 8)
+      // Small chance of generating 10 frames of nothing
+      if (rng.GenerateValue<u8>() < 2)
       {
-        // s_haitus = s_currentFrame;
+        s_haitus = s_currentFrame;
       }
 
       if (rng.GenerateValue<u8>() < 127)
@@ -1483,7 +1483,7 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
         s_padState.B = true;
       }
 
-      if (rng.GenerateValue<u8>() < 10)
+      if (rng.GenerateValue<u8>() < 2)
       {
         PadStatus->button |= PAD_BUTTON_A;
         s_padState.A = true;
