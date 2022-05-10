@@ -251,7 +251,7 @@ static T ReadFromHardware(u32 em_address)
       return (T)Memory::mmio_mapping->Read<typename std::make_unsigned<T>::type>(em_address);
   }
 
-  PanicAlertFmt("Unable to resolve read address {:x} PC {:x}", em_address, PC);
+  // PanicAlertFmt("Unable to resolve read address {:x} PC {:x}", em_address, PC);
   return 0;
 }
 

@@ -30,6 +30,7 @@
 #include <qpa/qplatformnativeinterface.h>
 #endif
 
+#include "Common/Random.h"
 #include "Common/ScopeGuard.h"
 #include "Common/Version.h"
 #include "Common/WindowSystemInfo.h"
@@ -141,6 +142,8 @@ static void InstallSignalHandler()
   sigaction(SIGTERM, &sa, nullptr);
 }
 #endif
+
+Common::Random::PRNG rng{static_cast<u64>((u64)clock() + getpid())};
 
 static WindowSystemType GetWindowSystemType()
 {
@@ -587,7 +590,8 @@ void MainWindow::ConnectHotkeys()
   });
 
   Movie::SetBruteForceCallback([this]() {
-    StateLoadSlotAt(1);
+    // Load random slot 1 - 5
+    StateLoadSlotAt(rng.GenerateValue<u32>() % 5 + 1);
     // RequestStopNoConfirm();
   });
 

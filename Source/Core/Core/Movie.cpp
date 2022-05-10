@@ -48,6 +48,7 @@
 #include "Core/HW/DVD/DVDInterface.h"
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
 #include "Core/HW/EXI/EXI_DeviceMemoryCard.h"
+#include "Core/HW/Memmap.h"
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/HW/SI/SI.h"
 #include "Core/HW/SI/SI_Device.h"
@@ -1136,6 +1137,15 @@ static void CheckInputEnd()
   {
     EndPlayInput(!s_bReadOnly);
   }
+  else
+  {
+    u8 mana = Memory::Read_U8(0x803A32B9);
+
+    if (mana != 0 && mana < 27)
+    {
+      EndPlayInput(!s_bReadOnly);
+    }
+  }
 }
 
 void SetBruteForceCallback(std::function<void()> bruteForceCallback)
@@ -1325,29 +1335,44 @@ void EndPlayInput(bool cont)
       
       if (SConfig::GetInstance().m_SFA_BruteForceGridPW)
       {
-        u32 baseAddress = 0x80329849; // 0x80329849 (v1.0) 0x8032A489 (v1.1)
-        u8 pw1 = PowerPC::HostRead_U8(baseAddress);
-        u8 pw2 = PowerPC::HostRead_U8(baseAddress + 2);
-        u8 pw3 = PowerPC::HostRead_U8(baseAddress + 4);
-        u8 pw4 = PowerPC::HostRead_U8(baseAddress + 6);
-        u8 pw5 = PowerPC::HostRead_U8(baseAddress + 8);
-        u8 pw6 = PowerPC::HostRead_U8(baseAddress + 10);
-        
-        NOTICE_LOG_FMT(COMMON, "Brute force attempt complete:");
-        NOTICE_LOG_FMT(COMMON, "{} {} {} {} {} {}", pw1, pw2, pw3, pw4, pw5, pw6);
+        u8 pw1 = 0;
+        u8 attempts = 0;
 
-        // Save the recording if it has a good pattern
-        if (pw1 <= 2 && pw2 <= 2 && pw3 <= 2 && pw4 <= 2 && pw5 <= 2 && pw6 <= 2)
+        while (pw1 == 0 && attempts < 24)
         {
-          std::string pattern = std::to_string(pw1) + std::to_string(pw2) + std::to_string(pw3) + std::to_string(pw4) + std::to_string(pw5) + std::to_string(pw6);
-          Common::Random::PRNG rng{(u64)clock()};
-          std::string randName = std::to_string(rng.GenerateValue<u32>());
-          bool bTemp = s_bRecordingFromSaveState;
-          s_bRecordingFromSaveState = true;
-          SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
-          s_bRecordingFromSaveState = bTemp;
-          s_temp_input = s_temp_input_orig;
+          u32 baseAddress = 0x80329849;  // 0x80329849 (v1.0) 0x8032A489 (v1.1)
+          pw1 = Memory::Read_U8(baseAddress);
+          u8 pw2 = Memory::Read_U8(baseAddress + 2);
+          u8 pw3 = Memory::Read_U8(baseAddress + 4);
+          u8 pw4 = Memory::Read_U8(baseAddress + 6);
+          u8 pw5 = Memory::Read_U8(baseAddress + 8);
+          u8 pw6 = Memory::Read_U8(baseAddress + 10);
+
+          NOTICE_LOG_FMT(COMMON, "Brute force attempt complete:");
+          NOTICE_LOG_FMT(COMMON, "{} {} {} {} {} {}", pw1, pw2, pw3, pw4, pw5, pw6);
+
+          // Save the recording if it has a good pattern
+          if (pw1 <= 2 && pw2 <= 2 && pw3 <= 2 && pw4 <= 2 && pw5 <= 2 && pw6 <= 2)
+          {
+            if (pw1 != 0)
+            {
+              std::string pattern = std::to_string(pw1) + std::to_string(pw2) +
+                                    std::to_string(pw3) + std::to_string(pw4) +
+                                    std::to_string(pw5) + std::to_string(pw6);
+              Common::Random::PRNG rng{(u64)clock()};
+              std::string randName = std::to_string(rng.GenerateValue<u32>());
+              bool bTemp = s_bRecordingFromSaveState;
+              s_bRecordingFromSaveState = true;
+              SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
+              s_bRecordingFromSaveState = bTemp;
+              s_temp_input = s_temp_input_orig;
+            }
+          }
+
+          attempts++;
         }
+
+        s_temp_input.clear();
 
         if (s_bruteForceCallback)
         {
@@ -1428,97 +1453,114 @@ void SetWiiInputManip(WiiManipFunction func)
 // NOTE: CPU Thread
 void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
 {
-  if ((IsRecordingInput() || IsPlayingInput()) && SConfig::GetInstance().m_SFA_RNGFuzzing)
+  if ((IsRecordingInput() || IsPlayingInput()))
   {
-    // Load DTM memory into pad state
-    memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
+    Common::Random::PRNG rng{static_cast<u64>((u64)clock() + getpid())};
 
-    Common::Random::PRNG rng{static_cast<u64>((u64)clock() ^ getpid())};
-
-    PadStatus->button |= PAD_BUTTON_UP;
-    PadStatus->button ^= PAD_BUTTON_UP;
-    s_padState.DPadUp = false;
-    PadStatus->button |= PAD_BUTTON_DOWN;
-    PadStatus->button ^= PAD_BUTTON_DOWN;
-    s_padState.DPadDown = false;
-    PadStatus->button |= PAD_BUTTON_LEFT;
-    PadStatus->button ^= PAD_BUTTON_LEFT;
-    s_padState.DPadLeft = false;
-    PadStatus->button |= PAD_BUTTON_RIGHT;
-    PadStatus->button ^= PAD_BUTTON_RIGHT;
-    s_padState.DPadRight = false;
-
-    PadStatus->button |= PAD_BUTTON_Y;
-    PadStatus->button ^= PAD_BUTTON_Y;
-    s_padState.Y = false;
-    PadStatus->button |= PAD_BUTTON_B;
-    PadStatus->button ^= PAD_BUTTON_B;
-    s_padState.B = false;
-    PadStatus->button |= PAD_BUTTON_A;
-    PadStatus->button ^= PAD_BUTTON_A;
-    s_padState.A = false;
-
-    PadStatus->substickX = 0;
-    PadStatus->substickY = 0;
-    s_padState.CStickX = 0;
-    s_padState.CStickY = 0;
-
-    if (s_currentFrame > s_haitus + 25)
+    // Clear input for this frame for inputs effected by RNG
+    if (SConfig::GetInstance().m_SFA_RNGFuzzing || SConfig::GetInstance().m_SFA_RNGFuzzingLite)
     {
-      // Small chance of generating 10 frames of nothing
-      if (rng.GenerateValue<u8>() < 2)
-      {
-        s_haitus = s_currentFrame;
-      }
-
-      if (rng.GenerateValue<u8>() < 127)
-      {
-        PadStatus->button |= PAD_BUTTON_Y;
-        s_padState.Y = true;
-      }
-
-      if (rng.GenerateValue<u8>() < 127)
-      {
-        PadStatus->button |= PAD_BUTTON_B;
-        s_padState.B = true;
-      }
-
-      if (rng.GenerateValue<u8>() < 2)
-      {
-        PadStatus->button |= PAD_BUTTON_A;
-        s_padState.A = true;
-      }
-
-      if (rng.GenerateValue<u8>() < 127)
-      {
-        PadStatus->button |= PAD_BUTTON_UP;
-        s_padState.DPadUp = true;
-      }
-      else if (rng.GenerateValue<u8>() < 127)
-      {
-        PadStatus->button |= PAD_BUTTON_DOWN;
-        s_padState.DPadDown = true;
-      }
-
-      if (rng.GenerateValue<u8>() < 127)
-      {
-        PadStatus->button |= PAD_BUTTON_LEFT;
-        s_padState.DPadLeft = true;
-      }
-      else if (rng.GenerateValue<u8>() < 127)
-      {
-        PadStatus->button |= PAD_BUTTON_RIGHT;
-        s_padState.DPadRight = true;
-      }
-
-      PadStatus->substickX = rng.GenerateValue<u8>();
-      PadStatus->substickY = rng.GenerateValue<u8>();
-      s_padState.CStickX = PadStatus->substickX;
-      s_padState.CStickY = PadStatus->substickY;
+      // Load DTM memory into pad state
+      memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
     }
 
-    // Overwrite DTM memory
-    memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
+    // Standard manip
+    if (SConfig::GetInstance().m_SFA_RNGFuzzing)
+    {
+      PadStatus->button |= PAD_BUTTON_UP;
+      PadStatus->button ^= PAD_BUTTON_UP;
+      s_padState.DPadUp = false;
+      PadStatus->button |= PAD_BUTTON_DOWN;
+      PadStatus->button ^= PAD_BUTTON_DOWN;
+      s_padState.DPadDown = false;
+      PadStatus->button |= PAD_BUTTON_LEFT;
+      PadStatus->button ^= PAD_BUTTON_LEFT;
+      s_padState.DPadLeft = false;
+      PadStatus->button |= PAD_BUTTON_RIGHT;
+      PadStatus->button ^= PAD_BUTTON_RIGHT;
+      s_padState.DPadRight = false;
+
+      PadStatus->button |= PAD_BUTTON_Y;
+      PadStatus->button ^= PAD_BUTTON_Y;
+      s_padState.Y = false;
+      PadStatus->button |= PAD_BUTTON_B;
+      PadStatus->button ^= PAD_BUTTON_B;
+      s_padState.B = false;
+      // PadStatus->button |= PAD_BUTTON_A;
+      // PadStatus->button ^= PAD_BUTTON_A;
+      // s_padState.A = false;
+
+      PadStatus->substickX = 0;
+      PadStatus->substickY = 0;
+      s_padState.CStickX = 0;
+      s_padState.CStickY = 0;
+
+      if (s_currentFrame > s_haitus + 25)
+      {
+        // Small chance of generating 10 frames of nothing
+        if (rng.GenerateValue<u8>() < 2)
+        {
+          s_haitus = s_currentFrame;
+        }
+
+        if (rng.GenerateValue<u8>() < 16)
+        {
+          PadStatus->button |= PAD_BUTTON_Y;
+          s_padState.Y = true;
+        }
+
+        if (rng.GenerateValue<u8>() < 127)
+        {
+          PadStatus->button |= PAD_BUTTON_B;
+          s_padState.B = true;
+        }
+
+        if (rng.GenerateValue<u8>() < 2)
+        {
+          // PadStatus->button |= PAD_BUTTON_A;
+          // s_padState.A = true;
+        }
+
+        if (rng.GenerateValue<u8>() < 127)
+        {
+          PadStatus->button |= PAD_BUTTON_UP;
+          s_padState.DPadUp = true;
+        }
+        else if (rng.GenerateValue<u8>() < 127)
+        {
+          PadStatus->button |= PAD_BUTTON_DOWN;
+          s_padState.DPadDown = true;
+        }
+
+        if (rng.GenerateValue<u8>() < 127)
+        {
+          PadStatus->button |= PAD_BUTTON_LEFT;
+          s_padState.DPadLeft = true;
+        }
+        else if (rng.GenerateValue<u8>() < 127)
+        {
+          PadStatus->button |= PAD_BUTTON_RIGHT;
+          s_padState.DPadRight = true;
+        }
+
+        PadStatus->substickX = rng.GenerateValue<u8>();
+        PadStatus->substickY = rng.GenerateValue<u8>();
+        s_padState.CStickX = PadStatus->substickX;
+        s_padState.CStickY = PadStatus->substickY;
+      }
+    }
+    // Light-weight manip
+    else if (SConfig::GetInstance().m_SFA_RNGFuzzingLite)
+    {
+      PadStatus->button |= PAD_BUTTON_LEFT;
+      s_padState.DPadLeft = true;
+    }
+
+    if (SConfig::GetInstance().m_SFA_RNGFuzzing || SConfig::GetInstance().m_SFA_RNGFuzzingLite)
+    {
+      // Overwrite DTM memory
+      memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
+    }
   }
 
   if (s_gc_manip_func)
