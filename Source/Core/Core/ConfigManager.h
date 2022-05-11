@@ -280,7 +280,7 @@ struct SConfig
 
   std::string m_WirelessMac;
   bool m_SFA_RNGFuzzing;
-  bool m_SFA_RNGFuzzingLite;
+  bool m_SFA_GateFuzzing;
   bool m_SFA_BruteForceGridPW;
   bool m_PauseMovie;
   bool m_ShowLag;

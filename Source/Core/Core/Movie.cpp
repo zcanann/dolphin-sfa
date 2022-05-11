@@ -103,7 +103,10 @@ static bool s_bSaveConfig = false, s_bNetPlay = false;
 static bool s_bClearSave = false;
 static bool s_bDiscChange = false;
 static bool s_bReset = false;
-static u64 s_haitus = 0;
+static u64 s_golf = 0;
+static u64 s_haitusY = 0;
+static u64 s_haitusD = 0;
+static u64 s_haitusC = 0;
 static std::string s_author;
 static std::string s_discChange;
 static std::array<u8, 16> s_MD5;
@@ -264,7 +267,9 @@ void Init(const BootParameters& boot)
     s_rerecords = 0;
     s_currentByte = 0;
     s_currentFrame = 0;
-    s_haitus = 0;
+    s_haitusY = 0;
+    s_haitusD = 0;
+    s_haitusC = 0;
     s_currentLagCount = 0;
     s_currentInputCount = 0;
   }
@@ -554,9 +559,12 @@ bool BeginRecordingInput(int controllers)
     s_playMode = MODE_RECORDING;
     s_author = SConfig::GetInstance().m_strMovieAuthor;
     s_temp_input.clear();
+    s_temp_input_orig.clear();
 
     s_currentByte = 0;
-    s_haitus = 0;
+    s_haitusY = 0;
+    s_haitusD = 0;
+    s_haitusC = 0;
 
     if (Core::IsRunning())
       Core::UpdateWantDeterminism();
@@ -828,7 +836,9 @@ void RecordInput(const GCPadStatus* PadStatus, int controllerID)
   CheckPadStatus(PadStatus, controllerID);
 
   s_temp_input.resize(s_currentByte + sizeof(ControllerState));
+  s_temp_input_orig.resize(s_currentByte + sizeof(ControllerState));
   memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
+  memcpy(&s_temp_input_orig[s_currentByte], &s_padState, sizeof(ControllerState));
   s_currentByte += sizeof(ControllerState);
 }
 
@@ -907,7 +917,9 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
   s_totalInputCount = tmpHeader.inputCount;
   s_totalTickCount = tmpHeader.tickCount;
   s_currentFrame = 0;
-  s_haitus = 0;
+  s_haitusY = 0;
+  s_haitusD = 0;
+  s_haitusC = 0;
   s_currentLagCount = 0;
   s_currentInputCount = 0;
 
@@ -921,7 +933,6 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
   s_temp_input.resize(recording_file.GetSize() - 256);
   recording_file.ReadBytes(s_temp_input.data(), s_temp_input.size());
   s_currentByte = 0;
-  s_haitus = 0;
   recording_file.Close();
 
   s_temp_input_orig = s_temp_input;
@@ -1007,7 +1018,7 @@ void LoadInput(const std::string& movie_path)
     afterEnd = true;
   }
 
-  if (!s_bReadOnly || s_temp_input.empty())
+  if (!s_bReadOnly || s_temp_input.empty() || s_temp_input_orig.empty())
   {
     s_totalFrames = tmpHeader.frameCount;
     s_totalLagCount = tmpHeader.lagCount;
@@ -1023,22 +1034,22 @@ void LoadInput(const std::string& movie_path)
     if (s_currentByte > totalSavedBytes)
     {
     }
-    else if (s_currentByte > s_temp_input.size())
+    else if (s_currentByte > s_temp_input_orig.size())
     {
       afterEnd = true;
       PanicAlertFmtT(
           "Warning: You loaded a save that's after the end of the current movie. (byte {0} "
           "> {1}) (input {2} > {3}). You should load another save before continuing, or load "
           "this state with read-only mode off.",
-          s_currentByte + 256, s_temp_input.size() + 256, s_currentInputCount, s_totalInputCount);
+          s_currentByte + 256, s_temp_input_orig.size() + 256, s_currentInputCount, s_totalInputCount);
     }
-    else if (s_currentByte > 0 && !s_temp_input.empty())
+    else if (s_currentByte > 0 && !s_temp_input_orig.empty())
     {
       // verify identical from movie start to the save's current frame
       std::vector<u8> movInput(s_currentByte);
       t_record.ReadArray(movInput.data(), movInput.size());
 
-      const auto result = std::mismatch(movInput.begin(), movInput.end(), s_temp_input.begin());
+      const auto result = std::mismatch(movInput.begin(), movInput.end(), s_temp_input_orig.begin());
 
       if (result.first != movInput.end())
       {
@@ -1057,16 +1068,16 @@ void LoadInput(const std::string& movie_path)
                          "read-only mode off. Otherwise you'll probably get a desync.",
                          byte_offset, byte_offset);
 
-          std::copy(movInput.begin(), movInput.end(), s_temp_input.begin());
+          std::copy(movInput.begin(), movInput.end(), s_temp_input_orig.begin());
         }
         else
         {
           const ptrdiff_t frame = mismatch_index / sizeof(ControllerState);
           ControllerState curPadState;
-          memcpy(&curPadState, &s_temp_input[frame * sizeof(ControllerState)],
+          memcpy(&curPadState, &s_temp_input_orig[frame * sizeof(ControllerState)],
                  sizeof(ControllerState));
           ControllerState movPadState;
-          memcpy(&movPadState, &s_temp_input[frame * sizeof(ControllerState)],
+          memcpy(&movPadState, &s_temp_input_orig[frame * sizeof(ControllerState)],
                  sizeof(ControllerState));
           PanicAlertFmtT(
               "Warning: You loaded a save whose movie mismatches on frame {0}. You should load "
@@ -1132,7 +1143,58 @@ void LoadInput(const std::string& movie_path)
 // NOTE: CPU Thread
 static void CheckInputEnd()
 {
-  if (s_currentByte >= s_temp_input.size() ||
+  u32 coordsAddressPtr = 0x803428F8;  // 0x80329849 (v1.0) 0x8032A489 (v1.1)
+  u32 coordsAddress = Memory::Read_U32(coordsAddressPtr);
+  // u32 xVal = Memory::Read_U32(coordsAddress + 0xC);
+  // u32 yVal = Memory::Read_U32(coordsAddress + 0x10);
+  u32 zVal = Memory::Read_U32(coordsAddress + 0x14);
+  // float x = *(float*)(void*)(&xVal);
+  // float y = *(float*)(void*)(&yVal);
+  float z = *(float*)(void*)(&zVal);
+
+  if (SConfig::GetInstance().m_SFA_GateFuzzing && z < -6520 && (s_currentFrame < s_golf || s_golf == 0))
+  {
+    s_golf = s_currentFrame;
+    Common::Random::PRNG rng{(u64)clock()};
+    std::string randName = std::to_string(rng.GenerateValue<u32>());
+    SaveRecording("GOLF_" + std::to_string(s_currentByte) + "_" + randName + ".dtm");
+    NOTICE_LOG_FMT(COMMON, "<GOLF>");
+    EndPlayInput(!s_bReadOnly);
+    return;
+  }
+
+  /*
+  if (SConfig::GetInstance().m_SFA_GateFuzzing && y > -1600)
+  {
+    Common::Random::PRNG rng{(u64)clock()};
+    std::string randName = std::to_string(rng.GenerateValue<u32>());
+    SaveRecording("Passed_Block_" + randName + ".dtm");
+    EndPlayInput(!s_bReadOnly);
+    return;
+  }
+  */
+
+  /*
+  if (SConfig::GetInstance().m_SFA_GateFuzzing && y > -1600)
+  {
+    Common::Random::PRNG rng{(u64)clock()};
+    std::string randName = std::to_string(rng.GenerateValue<u32>());
+    SaveRecording("Passed_Block_" + randName + ".dtm");
+    EndPlayInput(!s_bReadOnly);
+    return;
+  }*/
+
+  /*
+  if (SConfig::GetInstance().m_SFA_GateFuzzing && z < -5800)
+  {
+    Common::Random::PRNG rng{(u64)clock()};
+    std::string randName = std::to_string(rng.GenerateValue<u32>());
+    SaveRecording("Passed_Gate_" + randName + ".dtm");
+    EndPlayInput(!s_bReadOnly);
+    return;
+  }*/
+
+  if (s_currentByte >= s_temp_input_orig.size() ||
       (CoreTiming::GetTicks() > s_totalTickCount && !IsRecordingInputFromSaveState()))
   {
     EndPlayInput(!s_bReadOnly);
@@ -1145,6 +1207,24 @@ static void CheckInputEnd()
     {
       EndPlayInput(!s_bReadOnly);
     }
+
+    // TODO: Early exit criteria
+    /*
+    if (SConfig::GetInstance().m_SFA_GateFuzzing)
+    {
+      if (x < 3285)
+      {
+        EndPlayInput(!s_bReadOnly);
+      }
+      else if (x > 3325 && y < -1550 && z < -5450)
+      {
+        EndPlayInput(!s_bReadOnly);
+      }
+      else if (x < 3400 && z <= -5750)
+      {
+        EndPlayInput(!s_bReadOnly);
+      }
+    }*/
   }
 }
 
@@ -1318,7 +1398,9 @@ void EndPlayInput(bool cont)
       CPU::Break();
     s_rerecords = 0;
     s_currentByte = 0;
-    s_haitus = 0;
+    s_haitusY = 0;
+    s_haitusD = 0;
+    s_haitusC = 0;
     s_playMode = MODE_NONE;
     Core::DisplayMessage("Movie End.", 2000);
     s_bRecordingFromSaveState = false;
@@ -1335,44 +1417,36 @@ void EndPlayInput(bool cont)
       
       if (SConfig::GetInstance().m_SFA_BruteForceGridPW)
       {
-        u8 pw1 = 0;
-        u8 attempts = 0;
+        u32 baseAddress = 0x80329849;  // 0x80329849 (v1.0) 0x8032A489 (v1.1)
+        u8 pw1 = Memory::Read_U8(baseAddress);
+        u8 pw2 = Memory::Read_U8(baseAddress + 2);
+        u8 pw3 = Memory::Read_U8(baseAddress + 4);
+        u8 pw4 = Memory::Read_U8(baseAddress + 6);
+        u8 pw5 = Memory::Read_U8(baseAddress + 8);
+        u8 pw6 = Memory::Read_U8(baseAddress + 10);
 
-        while (pw1 == 0 && attempts < 24)
+        NOTICE_LOG_FMT(COMMON, "Brute force attempt complete:");
+        NOTICE_LOG_FMT(COMMON, "{} {} {} {} {} {}", pw1, pw2, pw3, pw4, pw5, pw6);
+
+        // Save the recording if it has a good pattern
+        if (pw1 <= 2 && pw2 <= 2 && pw3 <= 2 && pw4 <= 2 && pw5 <= 2 && pw6 <= 2)
         {
-          u32 baseAddress = 0x80329849;  // 0x80329849 (v1.0) 0x8032A489 (v1.1)
-          pw1 = Memory::Read_U8(baseAddress);
-          u8 pw2 = Memory::Read_U8(baseAddress + 2);
-          u8 pw3 = Memory::Read_U8(baseAddress + 4);
-          u8 pw4 = Memory::Read_U8(baseAddress + 6);
-          u8 pw5 = Memory::Read_U8(baseAddress + 8);
-          u8 pw6 = Memory::Read_U8(baseAddress + 10);
-
-          NOTICE_LOG_FMT(COMMON, "Brute force attempt complete:");
-          NOTICE_LOG_FMT(COMMON, "{} {} {} {} {} {}", pw1, pw2, pw3, pw4, pw5, pw6);
-
-          // Save the recording if it has a good pattern
-          if (pw1 <= 2 && pw2 <= 2 && pw3 <= 2 && pw4 <= 2 && pw5 <= 2 && pw6 <= 2)
+          if (pw1 != 0)
           {
-            if (pw1 != 0)
-            {
-              std::string pattern = std::to_string(pw1) + std::to_string(pw2) +
-                                    std::to_string(pw3) + std::to_string(pw4) +
-                                    std::to_string(pw5) + std::to_string(pw6);
-              Common::Random::PRNG rng{(u64)clock()};
-              std::string randName = std::to_string(rng.GenerateValue<u32>());
-              bool bTemp = s_bRecordingFromSaveState;
-              s_bRecordingFromSaveState = true;
-              SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
-              s_bRecordingFromSaveState = bTemp;
-              s_temp_input = s_temp_input_orig;
-            }
+            std::string pattern = std::to_string(pw1) + std::to_string(pw2) +
+                                  std::to_string(pw3) + std::to_string(pw4) +
+                                  std::to_string(pw5) + std::to_string(pw6);
+            Common::Random::PRNG rng{(u64)clock()};
+            std::string randName = std::to_string(rng.GenerateValue<u32>());
+            // bool bTemp = s_bRecordingFromSaveState;
+            // s_bRecordingFromSaveState = true;
+            SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
+            // s_bRecordingFromSaveState = bTemp;
           }
-
-          attempts++;
         }
 
         s_temp_input.clear();
+        s_temp_input_orig.clear();
 
         if (s_bruteForceCallback)
         {
@@ -1455,18 +1529,16 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
 {
   if ((IsRecordingInput() || IsPlayingInput()))
   {
-    Common::Random::PRNG rng{static_cast<u64>((u64)clock() + getpid())};
-
     // Clear input for this frame for inputs effected by RNG
-    if (SConfig::GetInstance().m_SFA_RNGFuzzing || SConfig::GetInstance().m_SFA_RNGFuzzingLite)
-    {
-      // Load DTM memory into pad state
-      memcpy(&s_padState, &s_temp_input[s_currentByte], sizeof(ControllerState));
-    }
-
-    // Standard manip
     if (SConfig::GetInstance().m_SFA_RNGFuzzing)
     {
+      static Common::Random::PRNG rng{static_cast<u64>((u64)clock() + getpid())};
+      ControllerState original_pad_State = ControllerState();
+
+      // Load DTM memory into pad state
+      memcpy(&s_padState, &s_temp_input_orig[s_currentByte], sizeof(ControllerState));
+      memcpy(&original_pad_State, &s_temp_input_orig[s_currentByte], sizeof(ControllerState));
+
       PadStatus->button |= PAD_BUTTON_UP;
       PadStatus->button ^= PAD_BUTTON_UP;
       s_padState.DPadUp = false;
@@ -1495,30 +1567,45 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
       s_padState.CStickX = 0;
       s_padState.CStickY = 0;
 
-      if (s_currentFrame > s_haitus + 25)
+      if (s_currentFrame > s_haitusY)
       {
-        // Small chance of generating 10 frames of nothing
-        if (rng.GenerateValue<u8>() < 2)
+        // Small chance of generating inaction frames
+        if (rng.GenerateValue<u8>() < 4)
         {
-          s_haitus = s_currentFrame;
-        }
-
-        if (rng.GenerateValue<u8>() < 16)
-        {
-          PadStatus->button |= PAD_BUTTON_Y;
-          s_padState.Y = true;
+          s_haitusY = s_currentFrame + rng.GenerateValue<u8>() / 4;
         }
 
         if (rng.GenerateValue<u8>() < 127)
         {
-          PadStatus->button |= PAD_BUTTON_B;
-          s_padState.B = true;
+          PadStatus->button |= PAD_BUTTON_Y;
+          s_padState.Y = true;
         }
+      }
 
-        if (rng.GenerateValue<u8>() < 2)
+      if (rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->button |= PAD_BUTTON_B;
+        s_padState.B = true;
+      }
+
+      if (rng.GenerateValue<u8>() < 2)
+      {
+        // Random analog X drift from -3 to 3 units (excluding 0)
+        const u8 maxDrift = 3;
+        u8 drift = rng.GenerateValue<u8>() % (maxDrift * 2) - maxDrift + 1;
+        // Remap 0 to -max
+        drift = drift == 0 ? -maxDrift : drift; 
+
+        PadStatus->stickX = original_pad_State.X + drift;
+        s_padState.AnalogStickX = PadStatus->stickX;
+      }
+
+      if (s_currentFrame > s_haitusD)
+      {
+        // Small chance of generating inaction frames
+        if (rng.GenerateValue<u8>() < 4)
         {
-          // PadStatus->button |= PAD_BUTTON_A;
-          // s_padState.A = true;
+          s_haitusD = s_currentFrame + rng.GenerateValue<u8>() / 4;
         }
 
         if (rng.GenerateValue<u8>() < 127)
@@ -1526,7 +1613,7 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
           PadStatus->button |= PAD_BUTTON_UP;
           s_padState.DPadUp = true;
         }
-        else if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < 127)
         {
           PadStatus->button |= PAD_BUTTON_DOWN;
           s_padState.DPadDown = true;
@@ -1537,10 +1624,19 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
           PadStatus->button |= PAD_BUTTON_LEFT;
           s_padState.DPadLeft = true;
         }
-        else if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < 127)
         {
           PadStatus->button |= PAD_BUTTON_RIGHT;
           s_padState.DPadRight = true;
+        }
+      }
+
+      if (s_currentFrame > s_haitusC)
+      {
+        // Small chance of generating inaction frames
+        if (rng.GenerateValue<u8>() < 4)
+        {
+          s_haitusC = s_currentFrame + rng.GenerateValue<u8>() / 4;
         }
 
         PadStatus->substickX = rng.GenerateValue<u8>();
@@ -1548,16 +1644,7 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
         s_padState.CStickX = PadStatus->substickX;
         s_padState.CStickY = PadStatus->substickY;
       }
-    }
-    // Light-weight manip
-    else if (SConfig::GetInstance().m_SFA_RNGFuzzingLite)
-    {
-      PadStatus->button |= PAD_BUTTON_LEFT;
-      s_padState.DPadLeft = true;
-    }
 
-    if (SConfig::GetInstance().m_SFA_RNGFuzzing || SConfig::GetInstance().m_SFA_RNGFuzzingLite)
-    {
       // Overwrite DTM memory
       memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
     }
@@ -1702,5 +1789,6 @@ void Shutdown()
 {
   s_currentInputCount = s_totalInputCount = s_totalFrames = s_tickCountAtLastInput = 0;
   s_temp_input.clear();
+  s_temp_input_orig.clear();
 }
 }  // namespace Movie

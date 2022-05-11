@@ -763,11 +763,11 @@ void MenuBar::AddMovieMenu()
   connect(enable_rng_fuzzing, &QAction::toggled,
           [](bool value) { SConfig::GetInstance().m_SFA_RNGFuzzing = value; });
 
-  auto* enable_rng_fuzzingLite = movie_menu->addAction(tr("[SFA] Enable Lite RNG Fuzzing (D-Pad only)"));
-  enable_rng_fuzzingLite->setCheckable(true);
-  enable_rng_fuzzingLite->setChecked(SConfig::GetInstance().m_SFA_RNGFuzzingLite);
-  connect(enable_rng_fuzzingLite, &QAction::toggled,
-          [](bool value) { SConfig::GetInstance().m_SFA_RNGFuzzingLite = value; });
+  auto* enable_gate_fuzzing = movie_menu->addAction(tr("[SFA] Enable Gate Fuzzing"));
+  enable_gate_fuzzing->setCheckable(true);
+  enable_gate_fuzzing->setChecked(SConfig::GetInstance().m_SFA_GateFuzzing);
+  connect(enable_gate_fuzzing, &QAction::toggled,
+          [](bool value) { SConfig::GetInstance().m_SFA_GateFuzzing = value; });
 
   auto* brute_force_grid_pw = movie_menu->addAction(tr("[SFA] Brute Force Grid Password"));
   brute_force_grid_pw->setCheckable(true);

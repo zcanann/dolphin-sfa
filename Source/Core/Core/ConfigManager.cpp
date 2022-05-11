@@ -258,7 +258,7 @@ void SConfig::SaveMovieSettings(IniFile& ini)
 
   movie->Set("PauseMovie", m_PauseMovie);
   movie->Set("SFA_RNGManip", m_SFA_RNGFuzzing);
-  movie->Set("SFA_RNGManipLite", m_SFA_RNGFuzzingLite);
+  movie->Set("SFA_GateManip", m_SFA_GateFuzzing);
   movie->Set("SFA_BruteForce", m_SFA_BruteForceGridPW);
   movie->Set("Author", m_strMovieAuthor);
   movie->Set("DumpFrames", m_DumpFrames);
@@ -529,7 +529,7 @@ void SConfig::LoadMovieSettings(IniFile& ini)
   
   movie->Get("PauseMovie", &m_PauseMovie, false);
   movie->Get("SFA_RNGManip", &m_SFA_RNGFuzzing, false);
-  movie->Get("SFA_RNGManipLite", &m_SFA_RNGFuzzingLite, false);
+  movie->Get("SFA_GateManip", &m_SFA_GateFuzzing, false);
   movie->Get("SFA_BruteForce", &m_SFA_BruteForceGridPW, false);
   movie->Get("Author", &m_strMovieAuthor, "");
   movie->Get("DumpFrames", &m_DumpFrames, false);
