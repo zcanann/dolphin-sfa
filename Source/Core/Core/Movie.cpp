@@ -1781,14 +1781,14 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
         s_padState.X = true;
       }*/
 
-      if (s_currentFrame > 506197 && s_currentFrame < 506240 - 32)
+      if (s_currentFrame >= 506226 && s_currentFrame <= 506235)
       {
         if (s_continuousL < s_currentFrame || s_continuousL == 0)
         {
-          // Small chance of generating contiguous L-trigger press up to 32 frames into the future
+          // Small chance of generating contiguous L-trigger press up to 16 frames into the future
           if (rng.GenerateValue<u8>() < 4)
           {
-            s_continuousL = s_currentFrame + rng.GenerateValue<u8>() / 8;
+            s_continuousL = s_currentFrame + rng.GenerateValue<u8>() / 16;
           }
         }
 
@@ -1800,7 +1800,7 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
         }
       }
 
-      if (s_currentFrame > 506197 && s_currentFrame < 506240)
+      if (s_currentFrame >= 506226 && s_currentFrame <= 506240)
       {
         if (rng.GenerateValue<u8>() < s_probabilitR)
         {
