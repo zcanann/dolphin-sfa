@@ -143,7 +143,7 @@ static void InstallSignalHandler()
 }
 #endif
 
-Common::Random::PRNG rng{static_cast<u64>((u64)clock() ^ ((u64)getpid() << 32))};
+static Common::Random::PRNG rng{static_cast<u64>((u64)clock() ^ ((u64)getpid() << 32))};
 
 static WindowSystemType GetWindowSystemType()
 {
@@ -590,9 +590,9 @@ void MainWindow::ConnectHotkeys()
   });
 
   Movie::SetBruteForceCallback([this]() {
-    // StateLoadSlotAt(1);
-    // Load random slot 1 - 4
-    StateLoadSlotAt(rng.GenerateValue<u32>() % 4 + 1);
+    StateLoadSlotAt(1);
+    // Load random slot 1 - 7
+    // StateLoadSlotAt(rng.GenerateValue<u32>() % 7 + 1);
     // RequestStopNoConfirm();
   });
 

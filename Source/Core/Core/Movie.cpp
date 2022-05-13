@@ -86,6 +86,7 @@ static bool s_bReadOnly = true;
 static u32 s_rerecords = 0;
 static PlayMode s_playMode = MODE_NONE;
 
+static Common::Random::PRNG rng{static_cast<u64>((u64)clock() ^ ((u64)getpid() << 32) + getpid())};
 static u8 s_controllers = 0;
 static ControllerState s_padState;
 static DTMHeader tmpHeader;
@@ -103,10 +104,34 @@ static bool s_bSaveConfig = false, s_bNetPlay = false;
 static bool s_bClearSave = false;
 static bool s_bDiscChange = false;
 static bool s_bReset = false;
+static const u8 flagFlow[] = {10, 30, 86, 70, 71, 15, 71, 86, 30, 71, 86, 30, 15, 30};
+static const u8 flagFlow2[] = {0, 0, 128, 128, 128, 0, 128, 128, 0, 128, 128, 0, 0, 0};
+static const s64 deltaFlow[] = {0, 329, 93, 245, 6, 30, 32, 214, 84, 163, 245, 42, 203, 250};
+// static const u8 flagFlow[] = {15, 71, 86, 30, 71, 86, 30, 15, 30};
+// static const u8 flagFlow2[] = {0, 128, 128, 0, 128, 128, 0, 0, 0};
+// static const s64 deltaFlow[] = {0, 32, 214, 84, 163, 245, 42, 203, 250};
+static u64 s_state_transition_frame = 0;
+static u32 s_flagIndex = 0;
 static u64 s_golf = 0;
+static u64 s_frame_golf = 0;
+static u64 s_probabilitY = 0;
+static u64 s_probabilitD = 0;
+static u64 s_probabilitA = 0;
+static u64 s_probabilitC = 0;
+static u64 s_probabilitB = 0;
+static u64 s_probabilitX = 0;
+static u64 s_probabilitR = 0;
+static u64 s_probabilitL = 0;
+static u64 s_generatedTilt = 0;
 static u64 s_haitusY = 0;
 static u64 s_haitusD = 0;
+static u64 s_haitusA = 0;
 static u64 s_haitusC = 0;
+static u64 s_true_brute_force = 0;
+static u64 s_true_brute_force_max = rng.GenerateValue<u8>() / 4;
+static u64 s_same_frame_repeats = 0;
+static u64 s_continuousL = 0;
+static u64 s_continuousR = 0;
 static std::string s_author;
 static std::string s_discChange;
 static std::array<u8, 16> s_MD5;
@@ -267,9 +292,24 @@ void Init(const BootParameters& boot)
     s_rerecords = 0;
     s_currentByte = 0;
     s_currentFrame = 0;
+    s_state_transition_frame = 0;
+    s_flagIndex = 0;
     s_haitusY = 0;
     s_haitusD = 0;
+    s_haitusA = 0;
     s_haitusC = 0;
+    s_probabilitY = 0;
+    s_probabilitD = 0;
+    s_probabilitA = 0;
+    s_probabilitC = 0;
+    s_probabilitX = 0;
+    s_probabilitB = 0;
+    s_probabilitR = 0;
+    s_probabilitL = 0;
+    s_continuousL = 0;
+    s_continuousR = 0;
+    s_generatedTilt = 0;
+    s_true_brute_force = 0;
     s_currentLagCount = 0;
     s_currentInputCount = 0;
   }
@@ -562,9 +602,24 @@ bool BeginRecordingInput(int controllers)
     s_temp_input_orig.clear();
 
     s_currentByte = 0;
+    s_flagIndex = 0;
+    s_state_transition_frame = 0;
     s_haitusY = 0;
     s_haitusD = 0;
+    s_haitusA = 0;
     s_haitusC = 0;
+    s_probabilitY = 0;
+    s_probabilitD = 0;
+    s_probabilitA = 0;
+    s_probabilitC = 0;
+    s_probabilitX = 0;
+    s_probabilitB = 0;
+    s_probabilitR = 0;
+    s_probabilitL = 0;
+    s_generatedTilt = 0;
+    s_continuousL = 0;
+    s_continuousR = 0;
+    s_true_brute_force = 0;
 
     if (Core::IsRunning())
       Core::UpdateWantDeterminism();
@@ -917,11 +972,28 @@ bool PlayInput(const std::string& movie_path, std::optional<std::string>* savest
   s_totalInputCount = tmpHeader.inputCount;
   s_totalTickCount = tmpHeader.tickCount;
   s_currentFrame = 0;
+  s_flagIndex = 0;
+  s_state_transition_frame = 0;
   s_haitusY = 0;
   s_haitusD = 0;
+  s_haitusA = 0;
   s_haitusC = 0;
+  s_probabilitY = rng.GenerateValue<u8>();
+  s_probabilitD = rng.GenerateValue<u8>();
+  s_probabilitA = rng.GenerateValue<u8>();
+  s_probabilitC = rng.GenerateValue<u8>();
+  s_probabilitX = rng.GenerateValue<u8>();
+  s_probabilitB = rng.GenerateValue<u8>();
+  s_probabilitR = rng.GenerateValue<u8>() / 16;
+  s_probabilitL = rng.GenerateValue<u8>();
+  s_generatedTilt = (rng.GenerateValue<u8>() < 127 ? -1 : 1) * rng.GenerateValue<u8>() / 32;
+  s_true_brute_force = 0;
+  s_continuousL = 0;
+  s_continuousR = 0;
   s_currentLagCount = 0;
   s_currentInputCount = 0;
+
+  NOTICE_LOG_FMT(COMMON, "<NEW SESSION>");
 
   s_playMode = MODE_PLAYING;
 
@@ -1145,13 +1217,76 @@ static void CheckInputEnd()
 {
   u32 coordsAddressPtr = 0x803428F8;  // 0x80329849 (v1.0) 0x8032A489 (v1.1)
   u32 coordsAddress = Memory::Read_U32(coordsAddressPtr);
-  // u32 xVal = Memory::Read_U32(coordsAddress + 0xC);
-  // u32 yVal = Memory::Read_U32(coordsAddress + 0x10);
+  u32 xVal = Memory::Read_U32(coordsAddress + 0xC);
+  u32 yVal = Memory::Read_U32(coordsAddress + 0x10);
   u32 zVal = Memory::Read_U32(coordsAddress + 0x14);
-  // float x = *(float*)(void*)(&xVal);
-  // float y = *(float*)(void*)(&yVal);
+  float x = *(float*)(void*)(&xVal);
+  float y = *(float*)(void*)(&yVal);
   float z = *(float*)(void*)(&zVal);
 
+  if (x == 696969 && y == 696969 && z == 696969)
+  {
+    if (false)
+    {
+      return;
+    }
+  }
+
+  /*
+  u8 linkMapFlag = Memory::Read_U8(0x803A331C);
+  bool isOverClimbPortion = y > -1600 && s_currentByte > 8072000;
+
+  if (SConfig::GetInstance().m_SFA_GateFuzzing)
+  {
+    // OFPT puzzle map flag progression
+    // NOTICE_LOG_FMT(COMMON, "{} / {} / {}", flagFlow[s_flagIndex], linkMapFlag, sizeof(flagFlow));
+    if (s_flagIndex < sizeof(flagFlow) && linkMapFlag == flagFlow[s_flagIndex])
+    {
+      u64 new_golf = sizeof(flagFlow) - s_flagIndex;
+      s_state_transition_frame = s_currentFrame;
+      s_flagIndex++;
+
+      if (new_golf < s_golf || new_golf <= 2 || s_golf == 0)
+      {
+        s_golf = new_golf;
+        Common::Random::PRNG rng{(u64)clock()};
+        std::string randName = std::to_string(rng.GenerateValue<u32>());
+        NOTICE_LOG_FMT(COMMON, "<GOLF>");
+        SaveRecording("GOLF_" + std::to_string(s_golf) + "_" + std::to_string(s_currentByte) + "_" + (isOverClimbPortion ? "Y" : "N") +
+                      "_" + randName + ".dtm");
+      }
+    }
+
+    s64 delta = s_flagIndex == 0 ? 0 : (s_currentFrame - s_state_transition_frame);
+
+    if (s_flagIndex > 0)
+    {
+      if (delta > deltaFlow[s_flagIndex])
+      {
+        NOTICE_LOG_FMT(COMMON, "DIED {} => {} (took {})", s_flagIndex - 1, s_flagIndex, delta);
+        EndPlayInput(!s_bReadOnly);
+        return;
+      }
+    }
+
+    /*
+    if (s_currentFrame == 504510 && linkMapFlag != 86)
+    {
+      NOTICE_LOG_FMT(COMMON, "TOO SLOW(1)");
+      EndPlayInput(!s_bReadOnly);
+      return;
+    }
+
+    if (s_flagIndex == 0 && s_currentFrame > 504116)
+    {
+      NOTICE_LOG_FMT(COMMON, "TOO SLOW(2)");
+      EndPlayInput(!s_bReadOnly);
+      return;
+    }*/
+  // }
+  // */
+
+  /*
   if (SConfig::GetInstance().m_SFA_GateFuzzing && z < -6520 && (s_currentFrame < s_golf || s_golf == 0))
   {
     s_golf = s_currentFrame;
@@ -1162,36 +1297,57 @@ static void CheckInputEnd()
     EndPlayInput(!s_bReadOnly);
     return;
   }
+  */
 
+  // bool isOverClimbPortion = y > -1600 && s_currentByte > 8072000;
   /*
-  if (SConfig::GetInstance().m_SFA_GateFuzzing && y > -1600)
+  if (SConfig::GetInstance().m_SFA_GateFuzzing && isOverClimbPortion)
   {
-    Common::Random::PRNG rng{(u64)clock()};
-    std::string randName = std::to_string(rng.GenerateValue<u32>());
-    SaveRecording("Passed_Block_" + randName + ".dtm");
-    EndPlayInput(!s_bReadOnly);
-    return;
+    if (s_currentByte < s_frame_golf || s_frame_golf == 0)
+    {
+      s_frame_golf = s_currentByte;
+      Common::Random::PRNG rng{(u64)clock()};
+      std::string randName = std::to_string(rng.GenerateValue<u32>());
+      SaveRecording("Passed_Block_" + std::to_string(s_currentByte) + "_" + randName + ".dtm");
+      // EndPlayInput(!s_bReadOnly);
+      // return;
+    }
   }
   */
 
   /*
-  if (SConfig::GetInstance().m_SFA_GateFuzzing && y > -1600)
+  if (SConfig::GetInstance().m_SFA_GateFuzzing && z < -6520)
   {
     Common::Random::PRNG rng{(u64)clock()};
     std::string randName = std::to_string(rng.GenerateValue<u32>());
-    SaveRecording("Passed_Block_" + randName + ".dtm");
+    SaveRecording("Passed_Door_" + std::to_string(s_currentByte) + randName + ".dtm");
     EndPlayInput(!s_bReadOnly);
     return;
-  }*/
+  }
 
-  /*
-  if (SConfig::GetInstance().m_SFA_GateFuzzing && z < -5800)
+  if (SConfig::GetInstance().m_SFA_GateFuzzing)
   {
-    Common::Random::PRNG rng{(u64)clock()};
-    std::string randName = std::to_string(rng.GenerateValue<u32>());
-    SaveRecording("Passed_Gate_" + randName + ".dtm");
-    EndPlayInput(!s_bReadOnly);
-    return;
+    if (x < 3285)
+    {
+      EndPlayInput(!s_bReadOnly);
+    }
+    else if (x > 3325 && y < -1550 && z < -5450)
+    {
+      EndPlayInput(!s_bReadOnly);
+    }
+    else if (x < 3400 && z <= -5750 && z >= -6000)
+    {
+      EndPlayInput(!s_bReadOnly);
+    }
+
+    if (z < -5800)
+    {
+      Common::Random::PRNG rng{(u64)clock()};
+      std::string randName = std::to_string(rng.GenerateValue<u32>());
+      SaveRecording("Passed_Gate_" + std::to_string(s_currentByte) + "_" + randName + ".dtm");
+      EndPlayInput(!s_bReadOnly);
+      return;
+    }
   }*/
 
   if (s_currentByte >= s_temp_input_orig.size() ||
@@ -1203,28 +1359,15 @@ static void CheckInputEnd()
   {
     u8 mana = Memory::Read_U8(0x803A32B9);
 
-    if (mana != 0 && mana < 27)
+    if (x < 3400 && z <= -5750 && z >= -6000)
     {
       EndPlayInput(!s_bReadOnly);
     }
 
-    // TODO: Early exit criteria
-    /*
-    if (SConfig::GetInstance().m_SFA_GateFuzzing)
+    if (mana != 0 && mana < 27)
     {
-      if (x < 3285)
-      {
-        EndPlayInput(!s_bReadOnly);
-      }
-      else if (x > 3325 && y < -1550 && z < -5450)
-      {
-        EndPlayInput(!s_bReadOnly);
-      }
-      else if (x < 3400 && z <= -5750)
-      {
-        EndPlayInput(!s_bReadOnly);
-      }
-    }*/
+      EndPlayInput(!s_bReadOnly);
+    }
   }
 }
 
@@ -1398,9 +1541,23 @@ void EndPlayInput(bool cont)
       CPU::Break();
     s_rerecords = 0;
     s_currentByte = 0;
+    s_flagIndex = 0;
     s_haitusY = 0;
     s_haitusD = 0;
+    s_haitusA = 0;
     s_haitusC = 0;
+    s_probabilitY = rng.GenerateValue<u8>();
+    s_probabilitD = rng.GenerateValue<u8>();
+    s_probabilitA = rng.GenerateValue<u8>();
+    s_probabilitC = rng.GenerateValue<u8>();
+    s_probabilitB = rng.GenerateValue<u8>();
+    s_probabilitR = rng.GenerateValue<u8>();
+    s_probabilitL = rng.GenerateValue<u8>();
+    s_generatedTilt = (rng.GenerateValue<u8>() < 127 ? -1 : 1) * rng.GenerateValue<u8>() / 8;
+    s_true_brute_force = 0;
+    s_true_brute_force_max++;
+    s_continuousL = 0;
+    s_continuousR = 0;
     s_playMode = MODE_NONE;
     Core::DisplayMessage("Movie End.", 2000);
     s_bRecordingFromSaveState = false;
@@ -1425,6 +1582,11 @@ void EndPlayInput(bool cont)
         u8 pw5 = Memory::Read_U8(baseAddress + 8);
         u8 pw6 = Memory::Read_U8(baseAddress + 10);
 
+        u32 coordsAddressPtr = 0x803428F8;  // 0x80329849 (v1.0) 0x8032A489 (v1.1)
+        u32 coordsAddress = Memory::Read_U32(coordsAddressPtr);
+        u32 zVal = Memory::Read_U32(coordsAddress + 0x14);
+        float z = *(float*)(void*)(&zVal);
+
         NOTICE_LOG_FMT(COMMON, "Brute force attempt complete:");
         NOTICE_LOG_FMT(COMMON, "{} {} {} {} {} {}", pw1, pw2, pw3, pw4, pw5, pw6);
 
@@ -1436,11 +1598,11 @@ void EndPlayInput(bool cont)
             std::string pattern = std::to_string(pw1) + std::to_string(pw2) +
                                   std::to_string(pw3) + std::to_string(pw4) +
                                   std::to_string(pw5) + std::to_string(pw6);
-            Common::Random::PRNG rng{(u64)clock()};
-            std::string randName = std::to_string(rng.GenerateValue<u32>());
+            std::string randName = std::to_string(rng.GenerateValue<u16>());
             // bool bTemp = s_bRecordingFromSaveState;
             // s_bRecordingFromSaveState = true;
-            SaveRecording("BruteForce_" + pattern + "_" + randName + ".dtm");
+            SaveRecording("BruteForce_" + pattern + "_" + std::to_string(int(std::abs(z)
+                )) + "_" + randName + ".dtm");
             // s_bRecordingFromSaveState = bTemp;
           }
         }
@@ -1530,9 +1692,8 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
   if ((IsRecordingInput() || IsPlayingInput()))
   {
     // Clear input for this frame for inputs effected by RNG
-    if (SConfig::GetInstance().m_SFA_RNGFuzzing)
+    if (SConfig::GetInstance().m_SFA_RNGFuzzing) // && s_currentFrame < 504150)
     {
-      static Common::Random::PRNG rng{static_cast<u64>((u64)clock() + getpid())};
       ControllerState original_pad_State = ControllerState();
 
       // Load DTM memory into pad state
@@ -1558,73 +1719,155 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
       PadStatus->button |= PAD_BUTTON_B;
       PadStatus->button ^= PAD_BUTTON_B;
       s_padState.B = false;
-      // PadStatus->button |= PAD_BUTTON_A;
-      // PadStatus->button ^= PAD_BUTTON_A;
-      // s_padState.A = false;
+      PadStatus->button |= PAD_BUTTON_A;
+      PadStatus->button ^= PAD_BUTTON_A;
+      s_padState.A = false;
+      // PadStatus->button |= PAD_BUTTON_X;
+      // PadStatus->button ^= PAD_BUTTON_X;
+      // s_padState.X = false;
+
+      PadStatus->triggerRight = original_pad_State.TriggerR;
+      s_padState.R = original_pad_State.R;
+      s_padState.TriggerR = original_pad_State.TriggerR;
+
+      PadStatus->triggerLeft = original_pad_State.TriggerL;
+      s_padState.L = original_pad_State.L;
+      s_padState.TriggerL = original_pad_State.TriggerL;
 
       PadStatus->substickX = 0;
       PadStatus->substickY = 0;
       s_padState.CStickX = 0;
       s_padState.CStickY = 0;
 
-      if (s_currentFrame > s_haitusY)
+      /*
+      // 50% chance of ignoring original R frames
+      if (original_pad_State.R && rng.GenerateValue<u8>() < 127)
+      {
+        PadStatus->triggerRight = 0;
+        s_padState.R = false;
+        s_padState.TriggerR = 0;
+      }
+
+      PadStatus->triggerLeft = 0;
+      s_padState.L = 0;
+      s_padState.TriggerL = 0;
+      */
+
+      if (s_currentFrame > s_haitusY) //  && s_true_brute_force < s_true_brute_force_max
       {
         // Small chance of generating inaction frames
-        if (rng.GenerateValue<u8>() < 4)
+        if (rng.GenerateValue<u8>() < 1)
         {
           s_haitusY = s_currentFrame + rng.GenerateValue<u8>() / 4;
         }
 
-        if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < s_probabilitY)
         {
           PadStatus->button |= PAD_BUTTON_Y;
           s_padState.Y = true;
         }
       }
 
-      if (rng.GenerateValue<u8>() < 127)
+      if (rng.GenerateValue<u8>() < s_probabilitB)
       {
         PadStatus->button |= PAD_BUTTON_B;
         s_padState.B = true;
       }
 
-      if (rng.GenerateValue<u8>() < 2)
+      /*
+      if (rng.GenerateValue<u8>() < s_probabilitX)
       {
-        // Random analog X drift from -3 to 3 units (excluding 0)
-        const u8 maxDrift = 3;
-        u8 drift = rng.GenerateValue<u8>() % (maxDrift * 2) - maxDrift + 1;
-        // Remap 0 to -max
-        drift = drift == 0 ? -maxDrift : drift; 
+        PadStatus->button |= PAD_BUTTON_X;
+        s_padState.X = true;
+      }*/
 
-        PadStatus->stickX = original_pad_State.X + drift;
-        s_padState.AnalogStickX = PadStatus->stickX;
+      if (s_currentFrame > 506197 && s_currentFrame < 506240 - 32)
+      {
+        if (s_continuousL < s_currentFrame || s_continuousL == 0)
+        {
+          // Small chance of generating contiguous L-trigger press up to 32 frames into the future
+          if (rng.GenerateValue<u8>() < 4)
+          {
+            s_continuousL = s_currentFrame + rng.GenerateValue<u8>() / 8;
+          }
+        }
+
+        if (s_continuousL > s_currentFrame)
+        {
+          PadStatus->triggerLeft = 255;
+          s_padState.L = true;
+          s_padState.TriggerL = 255;
+        }
+      }
+
+      if (s_currentFrame > 506197 && s_currentFrame < 506240)
+      {
+        if (rng.GenerateValue<u8>() < s_probabilitR)
+        {
+          PadStatus->triggerRight = 255;
+          s_padState.R = true;
+          s_padState.TriggerR = 255;
+        }
+        else
+        {
+          PadStatus->triggerRight = 0;
+          s_padState.R = false;
+          s_padState.TriggerR = 0;
+        }
+      }
+
+      if (s_currentFrame > s_haitusA)
+      {
+        // Small chance of generating inaction frames
+        if (rng.GenerateValue<u8>() < 4)
+        {
+          s_haitusA = s_currentFrame + rng.GenerateValue<u8>();
+        }
+        else
+        {
+          // PadStatus->stickX = original_pad_State.X + s_generatedTilt;
+          // s_padState.AnalogStickX = PadStatus->stickX;
+        }
+
+        /*
+        if (rng.GenerateValue<u16>() < 20)
+        {
+          // Random analog X drift from -3 to 3 units (excluding 0)
+          const u8 maxDrift = 12;
+          u8 drift = rng.GenerateValue<u8>() % (maxDrift * 2) - maxDrift + 1;
+          // Remap 0 to -max
+          drift = drift == 0 ? -maxDrift : drift;
+
+          PadStatus->stickX = original_pad_State.X + drift;
+          s_padState.AnalogStickX = PadStatus->stickX;
+        }*/
       }
 
       if (s_currentFrame > s_haitusD)
       {
         // Small chance of generating inaction frames
-        if (rng.GenerateValue<u8>() < 4)
+        if (rng.GenerateValue<u8>() < 1)
         {
           s_haitusD = s_currentFrame + rng.GenerateValue<u8>() / 4;
         }
 
-        if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < s_probabilitD)
         {
           PadStatus->button |= PAD_BUTTON_UP;
           s_padState.DPadUp = true;
         }
-        if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < s_probabilitD)
         {
           PadStatus->button |= PAD_BUTTON_DOWN;
           s_padState.DPadDown = true;
         }
 
-        if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < s_probabilitD)
         {
           PadStatus->button |= PAD_BUTTON_LEFT;
           s_padState.DPadLeft = true;
         }
-        if (rng.GenerateValue<u8>() < 127)
+        if (rng.GenerateValue<u8>() < s_probabilitD)
         {
           PadStatus->button |= PAD_BUTTON_RIGHT;
           s_padState.DPadRight = true;
@@ -1634,21 +1877,33 @@ void CallGCInputManip(GCPadStatus* PadStatus, int controllerID)
       if (s_currentFrame > s_haitusC)
       {
         // Small chance of generating inaction frames
-        if (rng.GenerateValue<u8>() < 4)
+        if (rng.GenerateValue<u8>() < 1)
         {
           s_haitusC = s_currentFrame + rng.GenerateValue<u8>() / 4;
         }
 
-        PadStatus->substickX = rng.GenerateValue<u8>();
-        PadStatus->substickY = rng.GenerateValue<u8>();
-        s_padState.CStickX = PadStatus->substickX;
-        s_padState.CStickY = PadStatus->substickY;
+        if (rng.GenerateValue<u8>() < s_probabilitC)
+        {
+          PadStatus->substickX = rng.GenerateValue<u8>();
+          PadStatus->substickY = rng.GenerateValue<u8>();
+          s_padState.CStickX = PadStatus->substickX;
+          s_padState.CStickY = PadStatus->substickY;
+        }
       }
 
       // Overwrite DTM memory
       memcpy(&s_temp_input[s_currentByte], &s_padState, sizeof(ControllerState));
     }
   }
+
+  /*
+  s_same_frame_repeats++;
+
+  if (s_same_frame_repeats > 20)
+  {
+    s_true_brute_force++;
+    s_same_frame_repeats = 0;
+  }*/
 
   if (s_gc_manip_func)
     s_gc_manip_func(PadStatus, controllerID);
